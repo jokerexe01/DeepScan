@@ -83,7 +83,6 @@ enum() {
     # extracts urls from live hosts
     katana -list live_subs.txt
 
-
 }
 
 # Start by checking tools
