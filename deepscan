@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# Global variable to store the target domain
+trg_domain=""
+
+# Function to display a checking animation
+show_animation() {
+    local pid=$!
+    local delay=0.1
+    local spinstr='|/-\'
+    while [ "$(ps a | awk '{print $1}' | grep "$pid")" ]; do
+        local temp=${spinstr#?}
+        printf " [%c]  Checking...\r" "$spinstr"
+        spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+    done
+    printf "\r"
+}
+
+# Function to check the availability of bug hunting tools
+check_tools() {
+
+    cat <<"EOF"
+   ▀████▀        ▀████▀ ▀███▀                     
+     ██            ██   ▄█▀                       
+     ██  ▄██▀▀██▄  ██ ▄█▀        ██▀▀█▄      ▄██  
+     ██ ██▀    ▀██ █████▄       ███  ▀██    ████  
+     ██ ██      ▓█ ▓█  ██▓           ▄██  ▄█▀ ██  
+██▓  ██ █▓      ▓█ ▓█   ▀▓▓▄       ▀▀██▄▄█▀   ██  
+     ▓▓ █▓      ▓▓ ▓▓    ▓▒▓         ▓█▓  ▓▓▀ █▓  
+▓▓▓  ▓▓ ▓▓▓    ▓▓▓ ▓▓     ▒▓▓▓     ▀▀▓▓▓▓▓▀   ▓▓  
+ ▒▓▒ ▒   ▒▓▒ ▒ ▒▓▒ ▒ ▒      ▒ ▒       ▒ ▒ ▒ ▒ ▒ ▒ 
+                               ▒▒▒  ▒▒▒      ▒▒   
+                                ▒▒▒▒▒▒       ▒▒  
+EOF
+
+    # Array of bug hunting tools
+    tools=("subfinder" "httpx" "nuclei" "wafw00f" "katana")
+    all_tools_available=true
+
+    # Loop through the array and check each tool
+    for tool in "${tools[@]}"; do
+        (sleep 2) &    # Simulate tool check time
+        show_animation # Show animation while checking
+
+        if command -v "$tool" >/dev/null 2>&1; then
+            echo -e "\e[32m[+] $tool is installed.\e[0m"
+        else
+            echo -e "\e[31m[-] $tool is not installed.\e[0m"
+            all_tools_available=false
+        fi
+    done
+
+    # Call the next function only if all tools are available
+    if [ "$all_tools_available" = true ]; then
+        echo -e "\e[34mAll tools are available! Proceeding to the next steps...\e[0m"
+        enum
+    else
+        echo -e "\e[31mSome tools are missing. Please install them and try again.\e[0m"
+    fi
+}
+
+# Function to enumerate subdomains
+enum() {
+    read -p "Enter the target domain name: " target
+    trg_domain="$target"
+    echo -e "\e[32m[+] Target domain set to: $trg_domain\e[0m"
+    subfinder -d $trg_domain -all -recursive -silent -o subs.txt
+
+    # Now checking for live host
+    cat subs.txt | httpx -td -title -sc -ip -cdn -o live_host.txt
+    cat live_host.txt | awk '{print $1}' | tee live_subs.txt
+
+    # Automated Live Subdomains Spray (using nuclei)
+    nuclei -l live_subs.txt -rl 10 -bs 2 -c 2 -as -s critical,high,medium -o nuclei_results.txt
+
+    # detecting WAF using wafw00f Tool
+    cat live_subs.txt | xargs -I {} wafw00f -v {} | tee waf_detection.txt
+
+    # sorting 403
+    cat live_host.txt | grep 403 | awk '{print $1}'
+
+    # extracts urls from live hosts
+    katana -list live_subs.txt
+
+
+}
+
+# Start by checking tools
+check_tools
